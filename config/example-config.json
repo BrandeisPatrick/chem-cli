@@ -1,0 +1,42 @@
+{
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4",
+    "temperature": 0.1,
+    "max_tokens": 2000
+  },
+  "chemistry": {
+    "default_software": "xtb",
+    "default_method": "gfn2-xtb",
+    "default_basis": "def2-svp",
+    "charge": 0,
+    "multiplicity": 1,
+    "solvation": null
+  },
+  "output": {
+    "save_results": true,
+    "results_dir": "./results",
+    "scratch_dir": "./scratch",
+    "formats": ["json", "xyz"],
+    "cleanup_scratch": false
+  },
+  "software_paths": {
+    "xtb": "auto",
+    "pyscf": "auto",
+    "orca": "auto"
+  },
+  "computational": {
+    "max_atoms": 200,
+    "timeout_optimization": 1800,
+    "timeout_frequencies": 3600,
+    "timeout_single_point": 600,
+    "memory_mb": 4000,
+    "num_threads": 4
+  },
+  "preferences": {
+    "auto_install": true,
+    "confirm_installs": true,
+    "show_progress": true,
+    "verbose_output": false
+  }
+}

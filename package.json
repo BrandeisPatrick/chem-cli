@@ -1,0 +1,53 @@
+{
+  "name": "chem-cli",
+  "version": "1.0.0",
+  "description": "Natural language conversational CLI for computational chemistry",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "chem-cli": "./src/index.js"
+  },
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js",
+    "build": "echo 'No build step needed for Node.js project'",
+    "install-global": "npm install -g ."
+  },
+  "keywords": [
+    "computational-chemistry",
+    "dft",
+    "quantum-chemistry",
+    "cli-agent",
+    "natural-language",
+    "conversational-ai"
+  ],
+  "author": "ChemCLI Team",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^5.3.0",
+    "cli-spinners": "^3.0.0",
+    "inquirer": "^9.2.0",
+    "marked": "^12.0.0",
+    "marked-terminal": "^7.0.0",
+    "node-fetch": "^3.3.0",
+    "ora": "^8.0.0",
+    "readline": "^1.3.0",
+    "yargs": "^17.7.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/chem-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/chem-cli/issues"
+  },
+  "homepage": "https://github.com/your-username/chem-cli#readme"
+}
