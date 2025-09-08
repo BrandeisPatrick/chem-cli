@@ -1,4 +1,4 @@
-import { ChatBar } from './chat-bar.js';
+import { GeminiUI } from './gemini-ui.js';
 import { Renderer } from './renderer.js';
 import { ASCIIArt } from './ascii-art.js';
 import { LLMAgent } from '../agents/planner.js';
@@ -20,7 +20,7 @@ marked.setOptions({
 
 export class ChemCLI {
   constructor() {
-    this.chatBar = new ChatBar();
+    this.ui = new GeminiUI();
     this.renderer = new Renderer();
     this.agent = null; // Initialize later
     this.tools = new ChemTools();
@@ -52,8 +52,13 @@ export class ChemCLI {
     await this.showWelcome();
     await this.initializeLLM();
     
+    // Set UI model info (this will show as an info message, not in prompt)
+    if (this.llmProvider !== 'demo') {
+      this.ui.setModel(this.llmProvider || 'demo', this.agent?.model || 'unknown');
+    }
+    
     // Start the interactive session
-    await this.chatBar.start(this.handleUserInput.bind(this));
+    await this.ui.start(this.handleUserInput.bind(this));
   }
 
   async runSetup() {
@@ -189,7 +194,7 @@ export class ChemCLI {
 
     // Handle special commands
     if (input.toLowerCase() === 'help') {
-      this.showHelp();
+      this.ui.showHelp();
       return;
     }
     
@@ -205,7 +210,7 @@ export class ChemCLI {
     }
 
     if (input.toLowerCase() === 'exit') {
-      this.chatBar.exit();
+      this.ui.exit();
       return;
     }
 
@@ -249,53 +254,45 @@ export class ChemCLI {
   }
 
   displayResponse(response) {
-    // Clear space above chat bar for response (account for 3-line chat box)
-    const terminalHeight = process.stdout.rows || 24;
-    const chatBoxHeight = 3;
-    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
-    
-    console.log(chalk.cyan('\n🤖 ChemCLI:'));
-    console.log(chalk.gray('─'.repeat(Math.min(70, process.stdout.columns - 2))));
-    console.log(marked(response));
-    console.log(chalk.gray('─'.repeat(Math.min(70, process.stdout.columns - 2))));
+    try {
+      const markdownContent = marked(response);
+      this.ui.showResponse(markdownContent);
+    } catch (error) {
+      // Fallback to plain text if markdown parsing fails
+      this.ui.showResponse(response);
+    }
   }
 
   showPrecisionOptionsUI(response) {
-    // Clear space above chat bar for response (account for 3-line chat box)
-    const terminalHeight = process.stdout.rows || 24;
-    const chatBoxHeight = 3;
-    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
-    
-    console.log(chalk.cyan('\n🤖 ChemCLI:'));
-    console.log(chalk.gray('═'.repeat(Math.min(70, process.stdout.columns - 2))));
-    console.log(marked(response));
-    
-    // Add interactive choice UI
-    console.log(chalk.yellow('\n⚡ Quick Selection:'));
-    console.log(chalk.green('  1️⃣  Type "1" for Full Precision'));
-    console.log(chalk.yellow('  2️⃣  Type "2" for Balanced Precision'));
-    console.log(chalk.blue('  3️⃣  Type "3" for Fast Preview'));
-    console.log(chalk.gray('\n  Or use the full commands: run full / run half / run low'));
-    console.log(chalk.gray('═'.repeat(Math.min(70, process.stdout.columns - 2))));
+    try {
+      const markdownContent = marked(response);
+      const enhancedResponse = markdownContent + 
+        '\n\n⚡ Quick Selection:\n' +
+        '  1️⃣  Type "1" for Full Precision\n' +
+        '  2️⃣  Type "2" for Balanced Precision\n' +
+        '  3️⃣  Type "3" for Fast Preview\n' +
+        '\nOr use the full commands: run full / run half / run low';
+      
+      this.ui.showResponse(enhancedResponse);
+    } catch (error) {
+      // Fallback to plain text
+      const enhancedResponse = response + 
+        '\n\n⚡ Quick Selection:\n' +
+        '  1️⃣  Type "1" for Full Precision\n' +
+        '  2️⃣  Type "2" for Balanced Precision\n' +
+        '  3️⃣  Type "3" for Fast Preview\n' +
+        '\nOr use the full commands: run full / run half / run low';
+      
+      this.ui.showResponse(enhancedResponse);
+    }
   }
 
   displayError(message) {
-    // Clear space above chat bar for error (account for 3-line chat box)
-    const terminalHeight = process.stdout.rows || 24;
-    const chatBoxHeight = 3;
-    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
-    
-    console.log(ASCIIArt.getErrorMessage(message));
+    this.ui.showError(message);
   }
 
   async handleStreamingResponse(input) {
-    // Clear space above chat bar for streaming response
-    const terminalHeight = process.stdout.rows || 24;
-    const chatBoxHeight = 3;
-    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
-    
-    console.log(chalk.cyan('\n🤖 ChemCLI:'));
-    console.log(chalk.gray('─'.repeat(Math.min(70, process.stdout.columns - 2))));
+    this.ui.setStatus('Streaming');
     
     let fullResponse = '';
     const startTime = Date.now();
@@ -306,24 +303,26 @@ export class ChemCLI {
         this.conversationHistory, 
         this.tools,
         (chunk) => {
-          // Stream each chunk to the terminal
-          process.stdout.write(chalk.white(chunk));
+          // Stream each chunk using the UI
+          this.ui.showStreamingResponse(chunk);
           fullResponse += chunk;
         }
       );
       
-      // Add final response formatting
-      console.log('\n' + chalk.gray('─'.repeat(Math.min(70, process.stdout.columns - 2))));
+      // Complete the streaming response
+      this.ui.showStreamingResponse('', true);
       
       const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(chalk.gray(`Response time: ${responseTime}s`));
+      this.ui.showInfo(`Response time: ${responseTime}s`);
       
       // Add to conversation history
       this.conversationHistory.push({ role: 'assistant', content: fullResponse || response });
       
     } catch (error) {
-      console.log('\n' + chalk.red(`❌ Streaming error: ${error.message}`));
+      this.ui.showError(`Streaming error: ${error.message}`);
     }
+    
+    this.ui.setStatus('Ready');
   }
 
   async handlePrecisionChoice(input) {
@@ -414,43 +413,33 @@ export class ChemCLI {
   }
 
   async showSystemStatus() {
-    // Clear space above chat bar for status (account for 3-line chat box)
-    const terminalHeight = process.stdout.rows || 24;
-    const chatBoxHeight = 3;
-    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
-    
-    console.log(chalk.yellow.bold('\n📊 System Status Report'));
-    console.log(chalk.yellow('═'.repeat(50)));
+    let statusReport = '📊 System Status Report\n\n';
     
     // LLM Status
-    console.log(chalk.cyan.bold('\n🤖 AI Provider:'));
-    console.log(`   Provider: ${this.llmProvider || 'None'}`);
-    console.log(`   Conversations: ${Math.floor(this.conversationHistory.length / 2)}`);
+    statusReport += '🤖 AI Provider:\n';
+    statusReport += `   Provider: ${this.llmProvider || 'None'}\n`;
+    statusReport += `   Conversations: ${Math.floor(this.conversationHistory.length / 2)}\n\n`;
     
     // Software Status
-    console.log(chalk.cyan.bold('\n⚙️  Software Status:'));
+    statusReport += '⚙️ Software Status:\n';
     const installer = this.tools.installer;
     const software = ['xtb', 'pyscf', 'orca'];
     
     for (const sw of software) {
       const status = await installer.check(sw);
-      console.log(`   ${ASCIIArt.getSoftwareStatus(sw, status)}`);
+      const statusIcon = status.installed ? '✅' : '❌';
+      statusReport += `   ${statusIcon} ${sw.toUpperCase()}: ${status.installed ? 'Available' : 'Not installed'}\n`;
     }
     
     // Tools Status
     const tools = this.tools.getAvailableTools();
-    console.log(chalk.cyan.bold('\n🛠️  Available Tools:'));
-    console.log(`   Chemistry tools: ${tools.length}`);
+    statusReport += `\n🛠️ Available Tools:\n`;
+    statusReport += `   Chemistry tools: ${tools.length}`;
     
-    console.log(chalk.yellow('═'.repeat(50)));
-    console.log();
+    this.ui.showInfo(statusReport);
   }
 
   showHelp() {
-    // Clear space above chat bar for help (account for 3-line chat box)
-    const terminalHeight = process.stdout.rows || 24;
-    const chatBoxHeight = 3;
-    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
     
     console.log(chalk.cyan.bold(`
 ╭──────────────────────────────────────────────────────────────╮
