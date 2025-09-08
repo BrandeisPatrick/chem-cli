@@ -1,5 +1,6 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
+import fetch from 'node-fetch';
 import { ConfigManager } from '../config/manager.js';
 
 export class SetupWizard {
@@ -272,42 +273,59 @@ export class SetupWizard {
   async testAPIKey(provider, apiKey) {
     const testPrompts = [{ role: 'user', content: 'Hello' }];
 
-    if (provider === 'openai') {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: testPrompts,
-          max_tokens: 5
-        })
-      });
+    try {
+      if (provider === 'openai') {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-3.5-turbo',
+            messages: testPrompts,
+            max_tokens: 5
+          }),
+          timeout: 10000 // 10 second timeout
+        });
 
-      return response.ok;
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log(chalk.red(`API Error (${response.status}): ${errorText}`));
+        }
+
+        return response.ok;
+      }
+
+      if (provider === 'anthropic') {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-3-haiku-20240307',
+            messages: testPrompts,
+            max_tokens: 5
+          }),
+          timeout: 10000 // 10 second timeout
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log(chalk.red(`API Error (${response.status}): ${errorText}`));
+        }
+
+        return response.ok;
+      }
+
+      return false;
+    } catch (error) {
+      console.log(chalk.red(`Network error: ${error.message}`));
+      return false;
     }
-
-    if (provider === 'anthropic') {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-haiku-20240307',
-          messages: testPrompts,
-          max_tokens: 5
-        })
-      });
-
-      return response.ok;
-    }
-
-    return false;
   }
 
   async showWelcome() {

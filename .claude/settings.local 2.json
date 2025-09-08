@@ -6,10 +6,7 @@
       "Bash(git init:*)",
       "Bash(git add:*)",
       "Bash(npm test:*)",
-      "Bash(timeout:*)",
-      "Bash(gtimeout:*)",
-      "Bash(git push:*)",
-      "Read(//Users/patrickli/.chemcli/**)"
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []

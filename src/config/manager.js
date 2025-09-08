@@ -44,6 +44,13 @@ export class ConfigManager {
         config.apiKey = this.decrypt(config.apiKey);
       }
       
+      // Set environment variable for compatibility
+      if (config.provider === 'openai' && config.apiKey) {
+        process.env.OPENAI_API_KEY = config.apiKey;
+      } else if (config.provider === 'anthropic' && config.apiKey) {
+        process.env.ANTHROPIC_API_KEY = config.apiKey;
+      }
+      
       return config;
     } catch {
       // Fallback to environment variables
