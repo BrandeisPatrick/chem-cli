@@ -2,6 +2,7 @@ import fetch from 'node-fetch';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { MockLLM } from './mock-llm.js';
 
 export class OpenAILLM {
   constructor(model = 'gpt-4') {
@@ -135,6 +136,8 @@ export class OllamaLLM {
   }
 }
 
+export { MockLLM };
+
 // Auto-detect best available LLM
 export async function detectBestLLM() {
   // Check for API keys
@@ -148,7 +151,7 @@ export async function detectBestLLM() {
   
   // Check for local Ollama
   try {
-    const response = await fetch('http://localhost:11434/api/tags');
+    const response = await fetch('http://localhost:11434/api/tags', { timeout: 3000 });
     if (response.ok) {
       const data = await response.json();
       if (data.models && data.models.length > 0) {
@@ -159,5 +162,6 @@ export async function detectBestLLM() {
     // Ollama not available
   }
   
-  throw new Error('No LLM provider available. Please set OPENAI_API_KEY, ANTHROPIC_API_KEY, or install Ollama');
+  // Fallback to demo mode instead of throwing error
+  return { provider: 'demo', model: 'mock-llm' };
 }

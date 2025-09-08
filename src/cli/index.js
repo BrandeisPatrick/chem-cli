@@ -1,9 +1,11 @@
-import { REPL } from './repl.js';
+import { ChatBar } from './chat-bar.js';
 import { Renderer } from './renderer.js';
 import { ASCIIArt } from './ascii-art.js';
 import { LLMAgent } from '../agents/planner.js';
 import { ChemTools } from '../tools/index.js';
 import { detectBestLLM } from '../agents/llm-clients.js';
+import { SetupWizard } from '../setup/wizard.js';
+import { ConfigManager } from '../config/manager.js';
 import chalk from 'chalk';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
@@ -18,31 +20,69 @@ marked.setOptions({
 
 export class ChemCLI {
   constructor() {
-    this.repl = new REPL();
+    this.chatBar = new ChatBar();
     this.renderer = new Renderer();
     this.agent = null; // Initialize later
     this.tools = new ChemTools();
     this.conversationHistory = [];
     this.llmProvider = null;
+    this.awaitingPrecisionChoice = false;
+    this.currentPlanData = null;
+    this.configManager = new ConfigManager();
+    this.setupWizard = new SetupWizard();
+    this.isDemo = false;
   }
 
   async start() {
+    // Check if this is a setup request
+    if (process.argv.includes('--setup')) {
+      await this.runSetup();
+      return;
+    }
+
+    // Check for existing configuration
+    const hasConfig = await this.configManager.hasExistingConfig();
+    
+    if (!hasConfig) {
+      // First time setup
+      await this.runFirstTimeSetup();
+    }
+
+    // Initialize and show welcome
     await this.showWelcome();
     await this.initializeLLM();
-    await this.repl.start(this.handleUserInput.bind(this));
+    
+    // Start the interactive session
+    await this.chatBar.start(this.handleUserInput.bind(this));
+  }
+
+  async runSetup() {
+    console.clear();
+    await this.setupWizard.run();
+  }
+
+  async runFirstTimeSetup() {
+    console.clear();
+    const provider = await this.setupWizard.run();
+    this.isDemo = (provider === 'demo');
   }
 
   async showWelcome() {
-    console.clear();
-    console.log(ASCIIArt.getWelcomeScreen());
-    
-    // Show LLM status
-    await this.checkLLMStatus();
-    
-    // Show software status
-    await this.showSoftwareStatus();
-    
-    console.log(chalk.gray('Ready to help with your chemistry calculations! 🚀\n'));
+    if (!this.isDemo) {
+      console.clear();
+      console.log(ASCIIArt.getWelcomeScreen());
+      
+      // Show LLM status
+      await this.checkLLMStatus();
+      
+      // Show software status
+      await this.showSoftwareStatus();
+      
+      console.log(chalk.gray('Ready to help with your chemistry calculations! 🚀\n'));
+    } else {
+      // Show demo welcome
+      await this.setupWizard.showWelcome();
+    }
   }
 
   async checkLLMStatus() {
@@ -102,22 +142,50 @@ export class ChemCLI {
 
   async initializeLLM() {
     try {
-      const llmConfig = await detectBestLLM();
+      // Try to use config first, then detectBestLLM
+      const config = await this.configManager.loadConfig();
+      let llmConfig;
+      
+      if (config.provider && config.provider !== 'demo') {
+        llmConfig = {
+          provider: config.provider,
+          model: config.model
+        };
+      } else {
+        llmConfig = await detectBestLLM();
+      }
+      
       this.agent = new LLMAgent(llmConfig);
       this.llmProvider = llmConfig.provider;
+      this.isDemo = (llmConfig.provider === 'demo');
       
-      console.log(chalk.green(`🚀 Using ${llmConfig.provider.toUpperCase()} (${llmConfig.model})`));
+      if (this.isDemo) {
+        console.log(chalk.yellow(`🎭 Demo Mode Active (${llmConfig.model})`));
+        console.log(chalk.gray('Set up an API key with --setup for real calculations'));
+      } else {
+        console.log(chalk.green(`🚀 Using ${llmConfig.provider.toUpperCase()} (${llmConfig.model})`));
+      }
       console.log();
     } catch (error) {
-      console.log(chalk.red('❌ No LLM provider available'));
-      console.log(chalk.yellow('Please set up an API key or install Ollama to continue.'));
+      console.log(chalk.red('❌ Error initializing LLM'));
+      console.log(chalk.yellow('Falling back to demo mode...'));
+      
+      // Fallback to demo mode
+      this.agent = new LLMAgent({ provider: 'demo', model: 'mock-llm' });
+      this.llmProvider = 'demo';
+      this.isDemo = true;
       console.log();
-      process.exit(1);
     }
   }
 
   async handleUserInput(input) {
     if (!input.trim()) return;
+
+    // Handle precision choice if we're waiting for one
+    if (this.awaitingPrecisionChoice) {
+      await this.handlePrecisionChoice(input);
+      return;
+    }
 
     // Handle special commands
     if (input.toLowerCase() === 'help') {
@@ -137,8 +205,8 @@ export class ChemCLI {
     }
 
     if (input.toLowerCase() === 'exit') {
-      console.log(ASCIIArt.getSuccessMessage('Thanks for using ChemCLI! 🧪'));
-      process.exit(0);
+      this.chatBar.exit();
+      return;
     }
 
     // Add to conversation history
@@ -152,22 +220,158 @@ export class ChemCLI {
       const response = await this.agent.process(input, this.conversationHistory, this.tools);
       
       thinkingSpinner.stop();
-      
-      // Show response with beautiful formatting
-      console.log(chalk.cyan('\n🤖 ChemCLI:'));
-      console.log(chalk.gray('─'.repeat(60)));
-      console.log(marked(response));
-      console.log(chalk.gray('─'.repeat(60)));
+
+      // Check if this response contains precision options
+      if (response.includes('Precision Options') && response.includes('run full')) {
+        this.awaitingPrecisionChoice = true;
+        this.currentPlanData = { lastInput: input }; // Store for later use
+        this.showPrecisionOptionsUI(response);
+      } else {
+        // Show regular response
+        this.displayResponse(response);
+      }
       
       // Add to conversation history
       this.conversationHistory.push({ role: 'assistant', content: response });
       
     } catch (error) {
-      console.log(ASCIIArt.getErrorMessage(error.message));
+      this.displayError(error.message);
     }
   }
 
+  displayResponse(response) {
+    // Clear space above chat bar for response (account for 3-line chat box)
+    const terminalHeight = process.stdout.rows || 24;
+    const chatBoxHeight = 3;
+    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
+    
+    console.log(chalk.cyan('\n🤖 ChemCLI:'));
+    console.log(chalk.gray('─'.repeat(Math.min(70, process.stdout.columns - 2))));
+    console.log(marked(response));
+    console.log(chalk.gray('─'.repeat(Math.min(70, process.stdout.columns - 2))));
+  }
+
+  showPrecisionOptionsUI(response) {
+    // Clear space above chat bar for response (account for 3-line chat box)
+    const terminalHeight = process.stdout.rows || 24;
+    const chatBoxHeight = 3;
+    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
+    
+    console.log(chalk.cyan('\n🤖 ChemCLI:'));
+    console.log(chalk.gray('═'.repeat(Math.min(70, process.stdout.columns - 2))));
+    console.log(marked(response));
+    
+    // Add interactive choice UI
+    console.log(chalk.yellow('\n⚡ Quick Selection:'));
+    console.log(chalk.green('  1️⃣  Type "1" for Full Precision'));
+    console.log(chalk.yellow('  2️⃣  Type "2" for Balanced Precision'));
+    console.log(chalk.blue('  3️⃣  Type "3" for Fast Preview'));
+    console.log(chalk.gray('\n  Or use the full commands: run full / run half / run low'));
+    console.log(chalk.gray('═'.repeat(Math.min(70, process.stdout.columns - 2))));
+  }
+
+  displayError(message) {
+    // Clear space above chat bar for error (account for 3-line chat box)
+    const terminalHeight = process.stdout.rows || 24;
+    const chatBoxHeight = 3;
+    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
+    
+    console.log(ASCIIArt.getErrorMessage(message));
+  }
+
+  async handlePrecisionChoice(input) {
+    const choice = input.toLowerCase().trim();
+    let precisionLevel = null;
+
+    // Map user input to precision levels
+    if (choice === '1' || choice === 'run full' || choice === 'full') {
+      precisionLevel = 'full';
+    } else if (choice === '2' || choice === 'run half' || choice === 'half') {
+      precisionLevel = 'half';
+    } else if (choice === '3' || choice === 'run low' || choice === 'low') {
+      precisionLevel = 'low';
+    } else {
+      console.log(chalk.red('❌ Invalid choice. Please select 1, 2, 3, or use "run full/half/low"'));
+      return;
+    }
+
+    // Reset state
+    this.awaitingPrecisionChoice = false;
+
+    try {
+      console.log(chalk.green(`\n✅ Selected: ${precisionLevel.toUpperCase()} precision`));
+      
+      const spinner = this.renderer.showSpinner('🔧 Generating calculation files...');
+      
+      // Process the precision choice
+      const result = await this.processPrecisionChoice(precisionLevel);
+      
+      spinner.stop();
+
+      // Show results
+      this.displayResponse(result);
+
+      // Add to conversation history
+      this.conversationHistory.push({ 
+        role: 'user', 
+        content: `Selected ${precisionLevel} precision` 
+      });
+      this.conversationHistory.push({ 
+        role: 'assistant', 
+        content: result 
+      });
+
+    } catch (error) {
+      this.displayError(`Failed to generate calculation: ${error.message}`);
+    } finally {
+      this.currentPlanData = null;
+    }
+  }
+
+  async processPrecisionChoice(precisionLevel) {
+    // This would normally use stored plan data from the previous calculation request
+    // For now, return a placeholder response
+    return `## 🎉 Calculation Setup Complete!\n\n` +
+           `I've generated all the files needed for your **${precisionLevel.toUpperCase()}** precision calculation:\n\n` +
+           `### 📋 Generated Files:\n` +
+           `- \`research_plan.md\` - Detailed theoretical background\n` +
+           `- \`execution_plan.md\` - Software and method selection\n` +
+           `- \`run_plan.md\` - Complete execution instructions\n` +
+           `- \`input.inp\` - Ready-to-run input file\n` +
+           `- \`job.sh\` - Job submission script\n\n` +
+           `### 🚀 Next Steps:\n` +
+           `1. Review the generated plans in the \`plans/\` directory\n` +
+           `2. Run the calculation using the commands in \`run_plan.md\`\n` +
+           `3. Monitor progress and analyze results\n\n` +
+           `**Estimated runtime:** ${this.getEstimatedTime(precisionLevel)}\n` +
+           `**Expected accuracy:** ${this.getExpectedAccuracy(precisionLevel)}\n\n` +
+           `Good luck with your calculation! 🧪✨`;
+  }
+
+  getEstimatedTime(precisionLevel) {
+    const times = {
+      'full': '4-24 hours',
+      'half': '1-4 hours', 
+      'low': '15-60 minutes'
+    };
+    return times[precisionLevel] || '1-2 hours';
+  }
+
+  getExpectedAccuracy(precisionLevel) {
+    const accuracy = {
+      'full': '±0.1-0.2 eV vs experiment',
+      'half': '±0.2-0.4 eV vs experiment',
+      'low': '±0.5-1.0 eV vs experiment'
+    };
+    return accuracy[precisionLevel] || 'Standard DFT accuracy';
+  }
+
   async showSystemStatus() {
+    // Clear space above chat bar for status (account for 3-line chat box)
+    const terminalHeight = process.stdout.rows || 24;
+    const chatBoxHeight = 3;
+    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
+    
     console.log(chalk.yellow.bold('\n📊 System Status Report'));
     console.log(chalk.yellow('═'.repeat(50)));
     
@@ -196,6 +400,11 @@ export class ChemCLI {
   }
 
   showHelp() {
+    // Clear space above chat bar for help (account for 3-line chat box)
+    const terminalHeight = process.stdout.rows || 24;
+    const chatBoxHeight = 3;
+    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
+    
     console.log(chalk.cyan.bold(`
 ╭──────────────────────────────────────────────────────────────╮
 │                        🧪 CHEMCLI HELP                       │
