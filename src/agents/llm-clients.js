@@ -1,3 +1,4 @@
+import OpenAI from 'openai';
 import fetch from 'node-fetch';
 import fs from 'fs/promises';
 import path from 'path';
@@ -7,36 +8,44 @@ import { MockLLM } from './mock-llm.js';
 export class OpenAILLM {
   constructor(model = 'gpt-4') {
     this.model = model;
-    this.apiKey = process.env.OPENAI_API_KEY;
-    this.baseURL = 'https://api.openai.com/v1';
+    this.client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
     
-    if (!this.apiKey) {
+    if (!process.env.OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY environment variable is required');
     }
   }
 
   async chat(messages) {
-    const response = await fetch(`${this.baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({
+    try {
+      const response = await this.client.chat.completions.create({
         model: this.model,
         messages,
         temperature: 0.1,
         max_tokens: 2000
-      })
-    });
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`OpenAI API error: ${error.error?.message || 'Unknown error'}`);
+      return response.choices[0].message.content;
+    } catch (error) {
+      throw new Error(`OpenAI API error: ${error.message}`);
     }
+  }
 
-    const data = await response.json();
-    return data.choices[0].message.content;
+  async chatStream(messages) {
+    try {
+      const stream = await this.client.chat.completions.create({
+        model: this.model,
+        messages,
+        temperature: 0.1,
+        max_tokens: 2000,
+        stream: true
+      });
+
+      return stream;
+    } catch (error) {
+      throw new Error(`OpenAI API error: ${error.message}`);
+    }
   }
 }
 

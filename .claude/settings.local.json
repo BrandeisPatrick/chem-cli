@@ -9,7 +9,8 @@
       "Bash(timeout:*)",
       "Bash(gtimeout:*)",
       "Bash(git push:*)",
-      "Read(//Users/patrickli/.chemcli/**)"
+      "Read(//Users/patrickli/.chemcli/**)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

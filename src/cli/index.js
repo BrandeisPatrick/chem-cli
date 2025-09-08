@@ -213,6 +213,15 @@ export class ChemCLI {
     this.conversationHistory.push({ role: 'user', content: input });
 
     try {
+      // Check if this is a calculation request that would use precision options
+      const isCalculationRequest = this.agent.isCalculationRequest(input);
+      
+      if (!isCalculationRequest && this.agent.processGeneralRequestStream && this.llmProvider === 'openai') {
+        // Use streaming for general requests with OpenAI
+        await this.handleStreamingResponse(input);
+        return;
+      }
+      
       // Show beautiful thinking animation
       const thinkingSpinner = this.renderer.showSpinner('🧠 Analyzing your request...');
       
@@ -277,6 +286,44 @@ export class ChemCLI {
     process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
     
     console.log(ASCIIArt.getErrorMessage(message));
+  }
+
+  async handleStreamingResponse(input) {
+    // Clear space above chat bar for streaming response
+    const terminalHeight = process.stdout.rows || 24;
+    const chatBoxHeight = 3;
+    process.stdout.write(`\x1B[${terminalHeight - chatBoxHeight - 1};1H`);
+    
+    console.log(chalk.cyan('\n🤖 ChemCLI:'));
+    console.log(chalk.gray('─'.repeat(Math.min(70, process.stdout.columns - 2))));
+    
+    let fullResponse = '';
+    const startTime = Date.now();
+    
+    try {
+      const response = await this.agent.processGeneralRequestStream(
+        input, 
+        this.conversationHistory, 
+        this.tools,
+        (chunk) => {
+          // Stream each chunk to the terminal
+          process.stdout.write(chalk.white(chunk));
+          fullResponse += chunk;
+        }
+      );
+      
+      // Add final response formatting
+      console.log('\n' + chalk.gray('─'.repeat(Math.min(70, process.stdout.columns - 2))));
+      
+      const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(chalk.gray(`Response time: ${responseTime}s`));
+      
+      // Add to conversation history
+      this.conversationHistory.push({ role: 'assistant', content: fullResponse || response });
+      
+    } catch (error) {
+      console.log('\n' + chalk.red(`❌ Streaming error: ${error.message}`));
+    }
   }
 
   async handlePrecisionChoice(input) {

@@ -148,6 +148,80 @@ export class LLMAgent {
     }
   }
 
+  async processGeneralRequestStream(userInput, conversationHistory, tools, onChunk) {
+    // Streaming version for real-time responses
+    if (this.provider !== 'openai' || !this.llm.chatStream) {
+      // Fallback to regular processing for non-OpenAI providers
+      return await this.processGeneralRequest(userInput, conversationHistory, tools);
+    }
+
+    const systemPrompt = this.prompts.getSystemPrompt(tools.getAvailableTools());
+    
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory.slice(-10),
+      { role: 'user', content: userInput }
+    ];
+
+    try {
+      const stream = await this.llm.chatStream(messages);
+      let fullResponse = '';
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          fullResponse += content;
+          if (onChunk) {
+            onChunk(content);
+          }
+        }
+      }
+      
+      // Handle tool calls if present
+      const toolCalls = this.parseToolCalls(fullResponse);
+      
+      if (toolCalls.length > 0) {
+        if (onChunk) {
+          onChunk('\n\n🛠️ Using tools...\n');
+        }
+        
+        for (const toolCall of toolCalls) {
+          const toolResult = await tools.execute(toolCall.name, toolCall.arguments);
+          
+          messages.push({
+            role: 'assistant',
+            content: fullResponse
+          });
+          messages.push({
+            role: 'user',
+            content: `Tool "${toolCall.name}" result: ${JSON.stringify(toolResult)}`
+          });
+        }
+        
+        // Get final response after tool execution
+        const finalStream = await this.llm.chatStream(messages);
+        let finalResponse = '';
+        
+        for await (const chunk of finalStream) {
+          const content = chunk.choices[0]?.delta?.content || '';
+          if (content) {
+            finalResponse += content;
+            if (onChunk) {
+              onChunk(content);
+            }
+          }
+        }
+        
+        return finalResponse;
+      }
+      
+      return fullResponse;
+      
+    } catch (error) {
+      return `I encountered an error: ${error.message}. Please try rephrasing your request.`;
+    }
+  }
+
   parseToolCalls(response) {
     // Parse tool calls from LLM response
     // Format: <tool>toolName(arg1="value1", arg2="value2")</tool>
