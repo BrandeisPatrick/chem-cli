@@ -6,6 +6,7 @@ import { InputBox } from './components/InputBox.js';
 import { StatusBar } from './components/StatusBar.js';
 import { StreamingMessage } from './components/StreamingMessage.js';
 import { ThinkingMessage } from './components/ThinkingMessage.js';
+import { ScrollableChat } from './components/ScrollableChat.js';
 import { UpdateStrip, Tips } from './components/UpdateStrip.js';
 import { STARTUP_TIPS } from '../../shared/help-content.js';
 
@@ -34,7 +35,7 @@ export const App = (props) => {
   const handleUserInput = (t) => onUserInput && onUserInput(t);
 
   return (
-    React.createElement(Box, { flexDirection: 'column', width, height },
+    React.createElement(Box, { flexDirection: 'column', width },
       messages.length === 0 ? (
         React.createElement(React.Fragment, null,
           // HERO region fills the middle and centers its children
@@ -68,26 +69,16 @@ export const App = (props) => {
         )
       ) : (
         React.createElement(React.Fragment, null,
-          // Compact header once conversation begins
-          React.createElement(GradientBanner, { compact: true }),
+          // Scrollable chat container
+          React.createElement(ScrollableChat, {
+            messages,
+            streamingContent: live,
+            isStreaming,
+            isThinking
+          }),
 
-          React.createElement(Box, { flexDirection: 'column', flexGrow: 1 },
-            messages.map((m, i) =>
-              React.createElement(ChatMessage, {
-                key: `${i}-${m.type}`,
-                type: m.type,
-                message: m.content,
-                responseTime: m.responseTime
-              })
-            ),
-            isStreaming && React.createElement(StreamingMessage, {
-              content: live,
-              isStreaming: true,
-              isComplete: false
-            }),
-            isThinking && !isStreaming && React.createElement(ThinkingMessage),
-            React.createElement(InputBox, { onSubmit: handleUserInput })
-          ),
+          // Input at bottom of content
+          React.createElement(InputBox, { onSubmit: handleUserInput }),
 
           React.createElement(StatusBar, {
             cwd: process.cwd(),
