@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 // Demo script showing ChemCLI capabilities without requiring LLM
-import { ChemTools } from './src/tools/index.js';
-import { Renderer } from './src/cli/renderer.js';
+import { ChemTools } from '../src/tools/index.js';
 import chalk from 'chalk';
 
 console.clear();
@@ -11,14 +10,14 @@ console.log(chalk.gray('Demonstrating natural language chemistry capabilities'))
 console.log();
 
 const tools = new ChemTools();
-const renderer = new Renderer();
+// Renderer removed - using simple console output
 
 async function demoMoleculeIdentification() {
   console.log(chalk.yellow('📝 Molecule Identification Demo'));
   console.log(chalk.gray('> "What is caffeine?"'));
   console.log();
   
-  const spinner = renderer.showSpinner('Identifying caffeine...');
+  console.log(chalk.blue('🔍 Identifying caffeine...'));
   
   try {
     const result = await tools.execute('get_molecule', { molecule: 'caffeine' });
@@ -33,7 +32,7 @@ async function demoMoleculeIdentification() {
     
   } catch (error) {
     spinner.stop();
-    renderer.error(`Error: ${error.message}`);
+    console.log(chalk.red(`❌ Error: ${error.message}`));
   }
 }
 
@@ -42,7 +41,7 @@ async function demoSoftwareCheck() {
   console.log(chalk.gray('> "What chemistry software is available?"'));
   console.log();
   
-  const spinner = renderer.showSpinner('Checking installed software...');
+  console.log(chalk.blue('⚙️ Checking installed software...'));
   
   try {
     const result = await tools.execute('check_software', { software: 'xtb' });
@@ -52,16 +51,16 @@ async function demoSoftwareCheck() {
     console.log();
     
     if (result.installed) {
-      renderer.success(`xTB is installed (${result.version})`);
+      console.log(chalk.green(`✅ xTB is installed (${result.version})`));
     } else {
-      renderer.warning('xTB is not installed - I can install it for you when needed');
+      console.log(chalk.yellow('⚠️ xTB is not installed - I can install it for you when needed'));
     }
     
     const pyscfResult = await tools.execute('check_software', { software: 'pyscf' });
     if (pyscfResult.installed) {
-      renderer.success(`PySCF is installed (${pyscfResult.version})`);
+      console.log(chalk.green(`✅ PySCF is installed (${pyscfResult.version})`));
     } else {
-      renderer.warning('PySCF is not installed - I can install it via pip when needed');
+      console.log(chalk.yellow('⚠️ PySCF is not installed - I can install it via pip when needed'));
     }
     
     console.log();
@@ -70,7 +69,7 @@ async function demoSoftwareCheck() {
     
   } catch (error) {
     spinner.stop();
-    renderer.error(`Error: ${error.message}`);
+    console.log(chalk.red(`❌ Error: ${error.message}`));
   }
 }
 
@@ -79,7 +78,7 @@ async function demoStructureGeneration() {
   console.log(chalk.gray('> "Generate 3D structure for water"'));
   console.log();
   
-  const spinner = renderer.showSpinner('Generating 3D structure...');
+  console.log(chalk.blue('🧬 Generating 3D structure...'));
   
   try {
     const result = await tools.execute('generate_structure', { molecule: 'water' });
@@ -97,7 +96,7 @@ async function demoStructureGeneration() {
     
   } catch (error) {
     spinner.stop();
-    renderer.error(`Error: ${error.message}`);
+    console.log(chalk.red(`❌ Error: ${error.message}`));
   }
 }
 

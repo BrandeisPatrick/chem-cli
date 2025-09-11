@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
 // Beautiful UI Demo for ChemCLI
-import { ASCIIArt } from './src/cli/ascii-art.js';
-import { Renderer } from './src/cli/renderer.js';
-import { ChemTools } from './src/tools/index.js';
+import { ASCIIArt } from '../src/cli/ascii-art.js';
+import { ChemTools } from '../src/tools/index.js';
 import chalk from 'chalk';
 
 console.clear();
@@ -11,7 +10,7 @@ console.clear();
 // Show welcome screen
 console.log(ASCIIArt.getWelcomeScreen());
 
-const renderer = new Renderer();
+// Renderer removed - using simple console output
 const tools = new ChemTools();
 
 async function sleep(ms) {
@@ -32,10 +31,10 @@ async function demoBeautifulUI() {
   
   // Demo 2: Calculation Banner
   console.log('\n' + ASCIIArt.getCalculationBanner('optimization'));
-  const spinner1 = renderer.showCalculationSpinner('optimization');
+  console.log(chalk.blue('🔄 Running geometry optimization...'));
   await sleep(3000);
   spinner1.stop();
-  renderer.success('Geometry optimization completed!');
+  console.log(chalk.green('✅ Geometry optimization completed!'));
   
   await sleep(1000);
   
@@ -52,7 +51,7 @@ async function demoBeautifulUI() {
   
   // Demo 4: Frequency Analysis
   console.log(ASCIIArt.getCalculationBanner('frequencies'));
-  const spinner2 = renderer.showCalculationSpinner('frequencies');
+  console.log(chalk.blue('🎵 Calculating vibrational frequencies...'));
   await sleep(2500);
   spinner2.stop();
   
@@ -64,7 +63,7 @@ async function demoBeautifulUI() {
     { Mode: '4', Frequency: '967.2 cm⁻¹', Intensity: 'Strong', Assignment: 'Ring breathing' }
   ];
   
-  renderer.table(freqData, ['Mode', 'Frequency', 'Intensity', 'Assignment']);
+  console.table(freqData);
   
   await sleep(2000);
   

@@ -1,5 +1,4 @@
-import { GeminiUI } from './gemini-ui.js';
-import { Renderer } from './renderer.js';
+import { InkUI } from './ink-ui/InkUI.js';
 import { ASCIIArt } from './ascii-art.js';
 import { LLMAgent } from '../agents/planner.js';
 import { ChemTools } from '../tools/index.js';
@@ -7,21 +6,11 @@ import { detectBestLLM } from '../agents/llm-clients.js';
 import { SetupWizard } from '../setup/wizard.js';
 import { ConfigManager } from '../config/manager.js';
 import chalk from 'chalk';
-import { marked } from 'marked';
-import { markedTerminal } from 'marked-terminal';
 
-marked.setOptions({
-  renderer: new markedTerminal({
-    emoji: false,
-    width: 80,
-    reflowText: true
-  })
-});
 
 export class ChemCLI {
   constructor() {
-    this.ui = new GeminiUI();
-    this.renderer = new Renderer();
+    this.ui = new InkUI();
     this.agent = null; // Initialize later
     this.tools = new ChemTools();
     this.conversationHistory = [];
@@ -62,87 +51,60 @@ export class ChemCLI {
   }
 
   async runSetup() {
-    console.clear();
+    // Don't clear console - let setup wizard handle display
     await this.setupWizard.run();
   }
 
   async runFirstTimeSetup() {
-    console.clear();
+    // Don't clear console - let setup wizard handle display
     const provider = await this.setupWizard.run();
     this.isDemo = (provider === 'demo');
   }
 
   async showWelcome() {
+    // Don't clear console or show ASCII art - the Ink UI handles all display now
     if (!this.isDemo) {
-      console.clear();
-      console.log(ASCIIArt.getWelcomeScreen());
-      
-      // Show LLM status
+      // Just check status silently for internal setup
       await this.checkLLMStatus();
-      
-      // Show software status
       await this.showSoftwareStatus();
-      
-      console.log(chalk.gray('Ready to help with your chemistry calculations! 🚀\n'));
-    } else {
-      // Show demo welcome
-      await this.setupWizard.showWelcome();
     }
   }
 
   async checkLLMStatus() {
-    console.log(chalk.yellow.bold('🤖 AI Provider Status:'));
-    
+    // Silent status check - don't log to console since Ink UI is handling display
     const hasOpenAI = !!process.env.OPENAI_API_KEY;
     const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
     
-    if (hasOpenAI) {
-      console.log(chalk.green('✅ OpenAI API key detected'));
-    } else {
-      console.log(chalk.gray('❌ OpenAI API key not found'));
-    }
+    // Store status for UI display if needed
+    this.llmStatus = {
+      hasOpenAI,
+      hasAnthropic,
+      hasOllama: false
+    };
     
-    if (hasAnthropic) {
-      console.log(chalk.green('✅ Anthropic API key detected'));
-    } else {
-      console.log(chalk.gray('❌ Anthropic API key not found'));
-    }
-    
-    // Check for Ollama
+    // Check for Ollama silently
     try {
       const fetch = (await import('node-fetch')).default;
       const response = await fetch('http://localhost:11434/api/tags', { timeout: 2000 });
       if (response.ok) {
         const data = await response.json();
-        if (data.models && data.models.length > 0) {
-          console.log(chalk.green(`✅ Ollama detected with ${data.models.length} models`));
-        }
+        this.llmStatus.hasOllama = data.models && data.models.length > 0;
       }
     } catch (error) {
-      console.log(chalk.gray('❌ Ollama not running locally'));
+      // Ollama not available
     }
-    
-    if (!hasOpenAI && !hasAnthropic) {
-      console.log(chalk.yellow('⚠️  No API keys found. Install Ollama for free local AI:'));
-      console.log(chalk.cyan('   curl -fsSL https://ollama.ai/install.sh | sh'));
-      console.log(chalk.cyan('   ollama pull llama3.1'));
-    }
-    
-    console.log();
   }
 
   async showSoftwareStatus() {
-    console.log(chalk.yellow.bold('⚙️  Chemistry Software Status:'));
-    
+    // Silent status check - store for UI display if needed
     const installer = this.tools.installer;
     const software = ['xtb', 'pyscf', 'orca'];
     
+    this.softwareStatus = {};
     for (const sw of software) {
       const status = await installer.check(sw);
-      console.log(`  ${ASCIIArt.getSoftwareStatus(sw, status)}`);
+      this.softwareStatus[sw] = status;
     }
-    
-    console.log(chalk.gray('   💡 Software installs automatically when needed\n'));
   }
 
   async initializeLLM() {
@@ -165,21 +127,15 @@ export class ChemCLI {
       this.isDemo = (llmConfig.provider === 'demo');
       
       if (this.isDemo) {
-        console.log(chalk.yellow(`🎭 Demo Mode Active (${llmConfig.model})`));
-        console.log(chalk.gray('Set up an API key with --setup for real calculations'));
+        // Don't log - Ink UI will show this info
       } else {
-        console.log(chalk.green(`🚀 Using ${llmConfig.provider.toUpperCase()} (${llmConfig.model})`));
+        // Don't log - Ink UI will show this info
       }
-      console.log();
     } catch (error) {
-      console.log(chalk.red('❌ Error initializing LLM'));
-      console.log(chalk.yellow('Falling back to demo mode...'));
-      
-      // Fallback to demo mode
+      // Fallback to demo mode silently
       this.agent = new LLMAgent({ provider: 'demo', model: 'mock-llm' });
       this.llmProvider = 'demo';
       this.isDemo = true;
-      console.log();
     }
   }
 
@@ -199,8 +155,8 @@ export class ChemCLI {
     }
     
     if (input.toLowerCase() === 'clear') {
-      console.clear();
-      await this.showWelcome();
+      // Clear messages in UI instead of console
+      this.ui.clearMessages();
       return;
     }
 
@@ -214,7 +170,7 @@ export class ChemCLI {
       return;
     }
 
-    // Add to conversation history
+    // Add to conversation history (UI already handled the user message display)
     this.conversationHistory.push({ role: 'user', content: input });
 
     try {
@@ -227,13 +183,21 @@ export class ChemCLI {
         return;
       }
       
-      // Show beautiful thinking animation
-      const thinkingSpinner = this.renderer.showSpinner('🧠 Analyzing your request...');
+      // Show thinking indicator in chat and status
+      this.ui.showThinking();
+      this.ui.setStatus('thinking');
+      
+      // Track response time for non-streaming responses
+      const startTime = Date.now();
       
       // Get agent response
       const response = await this.agent.process(input, this.conversationHistory, this.tools);
       
-      thinkingSpinner.stop();
+      const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      
+      // Hide thinking indicator and reset status
+      this.ui.hideThinking();
+      this.ui.setStatus('ready');
 
       // Check if this response contains precision options
       if (response.includes('Precision Options') && response.includes('run full')) {
@@ -241,55 +205,37 @@ export class ChemCLI {
         this.currentPlanData = { lastInput: input }; // Store for later use
         this.showPrecisionOptionsUI(response);
       } else {
-        // Show regular response
-        this.displayResponse(response);
+        // Show regular response with response time
+        this.displayResponse(response, responseTime);
       }
       
       // Add to conversation history
       this.conversationHistory.push({ role: 'assistant', content: response });
       
     } catch (error) {
-      this.displayError(error.message);
+      this.ui.hideThinking();
+      this.ui.setStatus('ready');
+      this.ui.showError(error.message);
     }
   }
 
-  displayResponse(response) {
-    try {
-      const markdownContent = marked(response);
-      this.ui.showResponse(markdownContent);
-    } catch (error) {
-      // Fallback to plain text if markdown parsing fails
-      this.ui.showResponse(response);
-    }
+  displayResponse(response, responseTime = null) {
+    // Send raw response directly to UI - let ChatMessage component handle formatting
+    this.ui.showResponse(response, responseTime);
   }
 
   showPrecisionOptionsUI(response) {
-    try {
-      const markdownContent = marked(response);
-      const enhancedResponse = markdownContent + 
-        '\n\n⚡ Quick Selection:\n' +
-        '  1️⃣  Type "1" for Full Precision\n' +
-        '  2️⃣  Type "2" for Balanced Precision\n' +
-        '  3️⃣  Type "3" for Fast Preview\n' +
-        '\nOr use the full commands: run full / run half / run low';
-      
-      this.ui.showResponse(enhancedResponse);
-    } catch (error) {
-      // Fallback to plain text
-      const enhancedResponse = response + 
-        '\n\n⚡ Quick Selection:\n' +
-        '  1️⃣  Type "1" for Full Precision\n' +
-        '  2️⃣  Type "2" for Balanced Precision\n' +
-        '  3️⃣  Type "3" for Fast Preview\n' +
-        '\nOr use the full commands: run full / run half / run low';
-      
-      this.ui.showResponse(enhancedResponse);
-    }
+    // Send raw response with enhanced options directly to UI
+    const enhancedResponse = response + 
+      '\n\n⚡ Quick Selection:\n' +
+      '  1️⃣  Type "1" for Full Precision\n' +
+      '  2️⃣  Type "2" for Balanced Precision\n' +
+      '  3️⃣  Type "3" for Fast Preview\n' +
+      '\nOr use the full commands: run full / run half / run low';
+    
+    this.ui.showResponse(enhancedResponse);
   }
 
-  displayError(message) {
-    this.ui.showError(message);
-  }
 
   async handleStreamingResponse(input) {
     this.ui.setStatus('Streaming');
@@ -303,19 +249,18 @@ export class ChemCLI {
         this.conversationHistory, 
         this.tools,
         (chunk) => {
-          // Stream each chunk using the UI
-          this.ui.showStreamingResponse(chunk);
+          // Stream each chunk using the UI - accumulate content
           fullResponse += chunk;
+          this.ui.showStreamingResponse(fullResponse);
         }
       );
       
-      // Complete the streaming response
-      this.ui.showStreamingResponse('', true);
-      
       const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
-      this.ui.showInfo(`Response time: ${responseTime}s`);
       
-      // Add to conversation history
+      // Complete the streaming response with response time
+      this.ui.showStreamingResponse('', true, responseTime);
+      
+      // Add to conversation history with response time
       this.conversationHistory.push({ role: 'assistant', content: fullResponse || response });
       
     } catch (error) {
@@ -337,7 +282,7 @@ export class ChemCLI {
     } else if (choice === '3' || choice === 'run low' || choice === 'low') {
       precisionLevel = 'low';
     } else {
-      console.log(chalk.red('❌ Invalid choice. Please select 1, 2, 3, or use "run full/half/low"'));
+      this.ui.showError('❌ Invalid choice. Please select 1, 2, 3, or use "run full/half/low"');
       return;
     }
 
@@ -345,17 +290,27 @@ export class ChemCLI {
     this.awaitingPrecisionChoice = false;
 
     try {
-      console.log(chalk.green(`\n✅ Selected: ${precisionLevel.toUpperCase()} precision`));
+      // Show precision selection in UI instead of console
+      this.ui.showInfo(`✅ Selected: ${precisionLevel.toUpperCase()} precision`);
       
-      const spinner = this.renderer.showSpinner('🔧 Generating calculation files...');
+      // Show thinking indicator and generating status
+      this.ui.showThinking();
+      this.ui.setStatus('generating');
+      
+      // Track response time for precision choice processing
+      const startTime = Date.now();
       
       // Process the precision choice
       const result = await this.processPrecisionChoice(precisionLevel);
       
-      spinner.stop();
+      const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      
+      // Hide thinking indicator and reset status
+      this.ui.hideThinking();
+      this.ui.setStatus('ready');
 
-      // Show results
-      this.displayResponse(result);
+      // Show results with response time
+      this.displayResponse(result, responseTime);
 
       // Add to conversation history
       this.conversationHistory.push({ 
@@ -368,7 +323,9 @@ export class ChemCLI {
       });
 
     } catch (error) {
-      this.displayError(`Failed to generate calculation: ${error.message}`);
+      this.ui.hideThinking();
+      this.ui.setStatus('ready');
+      this.ui.showError(`Failed to generate calculation: ${error.message}`);
     } finally {
       this.currentPlanData = null;
     }
@@ -440,66 +397,7 @@ export class ChemCLI {
   }
 
   showHelp() {
-    
-    console.log(chalk.cyan.bold(`
-╭──────────────────────────────────────────────────────────────╮
-│                        🧪 CHEMCLI HELP                       │
-╰──────────────────────────────────────────────────────────────╯
-`));
-
-    console.log(chalk.yellow.bold('🗣️  Natural Language Examples:'));
-    const examples = [
-      '"Calculate the HOMO-LUMO gap of benzene"',
-      '"Optimize the geometry of water using B3LYP"', 
-      '"What\'s the IR spectrum of methanol?"',
-      '"Compare the stability of chair vs boat cyclohexane"',
-      '"Predict UV-Vis spectrum of anthracene with TDDFT"',
-      '"Calculate NMR shifts for glucose"'
-    ];
-    
-    examples.forEach(example => {
-      console.log(chalk.green(`   ✨ ${example}`));
-    });
-
-    console.log(chalk.yellow.bold('\n💬 Special Commands:'));
-    const commands = [
-      ['help', 'Show this help message'],
-      ['clear', 'Clear screen and show welcome'],
-      ['status', 'Show system status'],
-      ['exit', 'Exit ChemCLI']
-    ];
-    
-    commands.forEach(([cmd, desc]) => {
-      console.log(chalk.blue(`   ${cmd.padEnd(8)} `) + chalk.gray(`- ${desc}`));
-    });
-
-    console.log(chalk.yellow.bold('\n🧮 Supported Calculations:'));
-    const calculations = [
-      'Geometry optimization',
-      'Frequency analysis (IR spectra)',
-      'Electronic properties (HOMO/LUMO, charges)',
-      'Thermochemistry (ΔH, ΔG, ΔS)',
-      'UV-Vis spectra (TDDFT)',
-      'NMR predictions (chemical shifts)',
-      'Reaction energetics'
-    ];
-    
-    calculations.forEach(calc => {
-      console.log(chalk.cyan(`   ⚛️  ${calc}`));
-    });
-
-    console.log(chalk.yellow.bold('\n⚙️  Available Software:'));
-    console.log(chalk.green('   ⚡ xTB      ') + chalk.gray('- Fast semi-empirical calculations'));
-    console.log(chalk.green('   🐍 PySCF    ') + chalk.gray('- Accurate DFT calculations'));  
-    console.log(chalk.green('   🦋 ORCA     ') + chalk.gray('- Professional quantum chemistry'));
-
-    console.log(chalk.yellow.bold('\n🎯 Pro Tips:'));
-    console.log(chalk.magenta('   • Be specific about methods: "B3LYP/def2-TZVP"'));
-    console.log(chalk.magenta('   • Mention solvation: "in water" or "SMD(acetone)"'));
-    console.log(chalk.magenta('   • Ask for comparisons: "compare xTB vs DFT results"'));
-    console.log(chalk.magenta('   • Request visualizations: "show IR spectrum"'));
-
-    console.log(chalk.cyan('─'.repeat(70)));
-    console.log();
+    // Use InkUI's showHelp method instead of console output
+    this.ui.showHelp();
   }
 }

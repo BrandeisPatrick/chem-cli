@@ -11,7 +11,9 @@
       "Bash(git push:*)",
       "Read(//Users/patrickli/.chemcli/**)",
       "Bash(npm install:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(tree:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
